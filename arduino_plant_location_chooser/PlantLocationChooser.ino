@@ -13,7 +13,7 @@
 #define BME280_MOSI 11
 #define BME280_CS 10
 
-// Coditionals
+// Conditionals
 #define READ_TEMPERATURE false 
 #define READ_HUMIDITY false
 #define READ_LIGHT true
