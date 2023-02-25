@@ -134,6 +134,8 @@ class MyCustomFormState extends State<PlantForm> {
         currentSettings += "a";
         break;
     }
+
+    currentSettings += ".";
     return currentSettings;
   }
 
@@ -261,31 +263,35 @@ class MyCustomFormState extends State<PlantForm> {
           // Submit Button
           ElevatedButton(
             onPressed: () async {
-              Fluttertoast.showToast(
-                  msg:
-                      "Submited with, Temperature: $temperatureValue, Light: $lightValue, Moisture: $moistureValue, Humidity: $humidityValue");
-              if (connectedDevice != null) {
-                List<BluetoothService> services =
-                    await connectedDevice!.device.discoverServices();
-                services.forEach((service) async {
-                  service.characteristics.forEach((char) {
-                    if (char.properties.write == true &&
-                        char.properties.read == true &&
-                        char.properties.writeWithoutResponse == true &&
-                        char.properties.notify == true) {
-                      char
-                          .write(ascii.encode(createSettingString()))
-                          .catchError((e) {});
+              try {
+                if (connectedDevice != null) {
+                  List<BluetoothService> services =
+                      await connectedDevice!.device.discoverServices();
+
+                  for (BluetoothService service in services) {
+                    for (BluetoothCharacteristic char
+                        in service.characteristics) {
+                      if (char.properties.read &&
+                          char.properties.write &&
+                          char.properties.writeWithoutResponse &&
+                          char.properties.notify) {
+                        await char
+                            .write(ascii.encode(createSettingString()))
+                            .catchError((e) {});
+                      }
                     }
-                  });
-                });
+                  }
+                }
+              } catch (e) {
+                Fluttertoast.showToast(msg: "Device Disconnected!");
+                connectedDevice = null;
               }
             },
             style: ButtonStyle(
                 backgroundColor:
                     MaterialStateProperty.all<Color>(Colors.green[700]!)),
             child: const Text('Submit!'),
-          )
+          ),
         ],
       ),
     );
@@ -302,6 +308,7 @@ class BluetoothManager extends StatefulWidget {
 class _BluetoothManagerState extends State<BluetoothManager> {
   FlutterBluePlus flutterBlue = FlutterBluePlus.instance;
   List<ScanResult> bluetoothResults = [];
+  StreamSubscription? listenSubscription;
 
   @override
   Widget build(BuildContext context) {
@@ -346,6 +353,29 @@ class _BluetoothManagerState extends State<BluetoothManager> {
                         i.device.disconnect();
                         await i.device.connect();
                         connectedDevice = i;
+                        Fluttertoast.showToast(
+                            msg: "Connected to ${i.device.name}");
+
+                        if (connectedDevice != null) {
+                          for (BluetoothService service
+                              in await connectedDevice!.device
+                                  .discoverServices()) {
+                            for (BluetoothCharacteristic char
+                                in service.characteristics) {
+                              if (char.properties.read &&
+                                  char.properties.write &&
+                                  char.properties.writeWithoutResponse &&
+                                  char.properties.notify) {
+                                await char.setNotifyValue(true);
+                                await connectedDevice!.device.requestMtu(2048);
+                                listenSubscription = char.value.listen((event) {
+                                  Fluttertoast.showToast(
+                                      msg: ascii.decode(event));
+                                });
+                              }
+                            }
+                          }
+                        }
                       },
                       style: ButtonStyle(
                           backgroundColor: MaterialStateProperty.all<Color>(
@@ -372,10 +402,26 @@ class _BluetoothManagerState extends State<BluetoothManager> {
               width: 12,
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (connectedDevice != null) {
+                  for (BluetoothService service
+                      in await connectedDevice!.device.discoverServices()) {
+                    for (BluetoothCharacteristic char
+                        in service.characteristics) {
+                      if (char.properties.read &&
+                          char.properties.write &&
+                          char.properties.writeWithoutResponse &&
+                          char.properties.notify) {
+                        await char.setNotifyValue(false);
+                      }
+                    }
+                  }
+
+                  listenSubscription?.cancel();
                   connectedDevice!.device.disconnect();
                 }
+                Fluttertoast.showToast(
+                    msg: "Disconnected from ${connectedDevice?.device.name}");
                 connectedDevice = null;
               },
               style: ButtonStyle(
